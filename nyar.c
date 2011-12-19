@@ -58,7 +58,7 @@ static void
 draw_one(int amt, int max)
 {
   int i;
-  char fmt[32];
+  char fmt[64];
   char buf[1024];
   float percentage = amt / (float)max;
   int width = MIN((int)((current_width - 11) * percentage), 1024);
@@ -66,10 +66,10 @@ draw_one(int amt, int max)
   fill(buf, "=", width, 1);
   buf[width] = 0;
 
-  memset(fmt, 0, 32);
+  memset(fmt, 0, 64);
 
   // create format string which takes into consideration width
-  snprintf(fmt, 32, "[%%-%ds] %%c %%-4.1f%%%%\n", (current_width - 11));
+  snprintf(fmt, 64, "[%%-%ds] %%c %%-4.1f%%%%\n", (current_width - 11));
   printf(fmt, buf, NEXT_THROBBER, 100 * percentage);
 }
 
