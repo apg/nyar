@@ -21,6 +21,6 @@ close to my output. Enter nyar
 
 ## Example
 
-  $ for n in {1..100}; do echo $n >> /tmp/foo; sleep .5; done&
-  $ nyar 100 "wc -l /tmp/foo"
-  [========================================================] / 100.0%
+    $ for n in {1..100}; do echo $n >> /tmp/foo; sleep .5; done&
+    $ nyar 100 "wc -l /tmp/foo"
+    [========================================================] / 100.0%
