@@ -1,5 +1,7 @@
-nyar - command line nyancat progress bar
-----------------------------------------
+nyar - command line progress bar (with eventual nyancat output)
+---------------------------------------------------------------
+
+## This is ugly, feel free to fix it.
 
 ## Synopsis
 
@@ -14,6 +16,11 @@ I know that I'm expecting 1000 unique field #2s. Therefore, I should be
 able to tell a program to watch for some commands' numeric output to be
 close to my output. Enter nyar
 
-    $ nyar -n 1000 -- awk '{print $2}' | sort | uniq | wc -l
-    [===========================================            / 85% ]
+    $ nyar 1000 "awk '{print \$2}' | sort | uniq | wc -l"
+    [===========================================           ] / 85.0%
 
+## Example
+
+  $ for n in {1..100}; do echo $n >> /tmp/foo; sleep .5; done&
+  $ nyar 100 "wc -l /tmp/foo"
+  [========================================================] / 100.0%
