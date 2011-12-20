@@ -1,6 +1,8 @@
 #include <sys/ioctl.h>
+#include <sys/wait.h>
 #include <sys/types.h>
 #include <poll.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <unistd.h>
 #include <time.h>
@@ -16,7 +18,7 @@ static int needs_relaunch = 0;
 
 #define NEXT_THROBBER (_throbber[(_throbber_i++) % 4])
 static char _throbber[] = {
-  '/', '-', '\\', '|'
+  '-', '\\', '|', '/'
 };
 static int _throbber_i = 0;
 
@@ -45,7 +47,7 @@ signal_handler(int signum)
 static void
 fill(char *dest, char *src, size_t maxsize, size_t srcsiz)
 {
-  int i = 0;
+  unsigned int i = 0;
   while (i < maxsize) {
     strncpy(&dest[i], src, srcsiz);
     i += srcsiz;
@@ -54,14 +56,29 @@ fill(char *dest, char *src, size_t maxsize, size_t srcsiz)
   // 1 in the case that these are not evenly divisible.
 }
 
+
+static void 
+msleep(long ms)
+{
+  struct timespec tm;
+  tm.tv_sec = ms / 1000;
+  tm.tv_nsec = (ms % 1000) * 1000000;
+  nanosleep(&tm, NULL); // if there's an error, I don't care here.
+}
+
 static void
 draw_one(int amt, int max)
 {
-  int i;
+  int width;
   char fmt[64];
   char buf[1024];
   float percentage = amt / (float)max;
-  int width = MIN((int)((current_width - 11) * percentage), 1024);
+
+  if (percentage > 1.0) {
+    percentage = 1.0;
+  }
+  
+  width = MIN((int)((current_width - 11) * percentage), 1024);
 
   fill(buf, "=", width, 1);
   buf[width] = 0;
@@ -69,7 +86,7 @@ draw_one(int amt, int max)
   memset(fmt, 0, 64);
 
   // create format string which takes into consideration width
-  snprintf(fmt, 64, "[%%-%ds] %%c %%-4.1f%%%%\n", (current_width - 11));
+  snprintf(fmt, 64, "\n\033[1A\033[2K[%%-%ds] %%c %%-4.1f%%%%", (current_width - 11));
   printf(fmt, buf, NEXT_THROBBER, 100 * percentage);
 }
 
@@ -80,12 +97,18 @@ read_last_number(int fd)
 {
   char buf[1024];
   int br;
-  int i;
+  int tmp;
   br = read(fd, buf, 1024);
   // TODO: this is broken severely
   if (br > 0) {
     buf[br-1] = 0;
-    return atoi(buf);
+    tmp = atoi(buf);
+    // only ever make forward progress.
+    if (tmp > last_number) {
+      last_number = tmp;
+      return tmp;
+    }
+    return last_number;
   }
   return -1;
 }
@@ -93,17 +116,15 @@ read_last_number(int fd)
 static void
 main_loop(int finish, int argc, char *argv[])
 {
-  int i = 0; // tmp
-  char *newargs[1024];
-  char buf[10];
+  char *newargs[4];
   int pdes[2] = {-1, -1};
   pid_t chld;
+  int chld_status;
   int progress = 0;
   int tprog = 0;
   int completed = 0;
   int ps;
   struct pollfd pfd;
-
  loop:
   needs_relaunch = 0;
 
@@ -128,7 +149,7 @@ main_loop(int finish, int argc, char *argv[])
       }
     }
 
-    if (argc > 1022) {
+    if (argc > 1) {
       fprintf(stderr, "too many arguments");
       _exit(EXIT_FAILURE);
     }
@@ -138,9 +159,8 @@ main_loop(int finish, int argc, char *argv[])
     newargs[2] = strdup(argv[0]);
     newargs[3] = 0;
 
-    // EXEC Should happen here with /bin/sh -c {whatever}
     if (execv("/bin/sh", newargs) < 0) {
-      perror("execvp");
+      perror("execv");
       _exit(EXIT_FAILURE);
     }
   }
@@ -155,13 +175,18 @@ main_loop(int finish, int argc, char *argv[])
       }
     }
 
+    if (fcntl(STDIN_FILENO, F_SETFL, O_NONBLOCK) < 0) {
+      perror("fcntl");
+      _exit(EXIT_FAILURE);
+    }
+
     pfd.fd = STDIN_FILENO;
     pfd.events = POLLIN;
 
     completed = (progress / finish) >= 1;
     // poll here on STDIN_FILENO and update after each timeout
     while (!needs_relaunch && !completed) {
-      ps = poll(&pfd, 1, 200);
+      ps = poll(&pfd, 1, 50);
       if (ps < 0) {
         perror("perror");        
         _exit(EXIT_FAILURE);
@@ -177,12 +202,13 @@ main_loop(int finish, int argc, char *argv[])
     }
 
     if (!completed && needs_relaunch) {
-      sleep(1);
+      // nanosleep
+      msleep(500);
       close(STDIN_FILENO);
       goto loop;
     }
     kill(chld, SIGTERM);
-    waitpid(&chld);
+    waitpid(chld, &chld_status, 0);
   }
 }
 
@@ -190,7 +216,6 @@ int
 main(int argc, char **argv)
 {
   struct sigaction saction;
-  int i = 0; 
 
   sigemptyset(&saction.sa_mask);
   saction.sa_flags = 0;
@@ -211,9 +236,10 @@ main(int argc, char **argv)
     main_loop(atoi(argv[1]), argc - 2, &argv[2]);
   }
   else {
-    printf("usage: %s <max val> <cmd> <cmd arg 1> <cmd arg ...> <cmd arg N>\n", 
+    printf("usage: %s <max val> <cmd>\n", 
            argv[0]);
     _exit(EXIT_FAILURE);
   }
+  printf("\n");
   return 0;
 }
